@@ -7,7 +7,7 @@ export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions)
     
-    if (!session?.user?.id) {
+    if (!session?.user || !(session.user as any).id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -26,13 +26,13 @@ export async function POST(request: NextRequest) {
       where: { id: roundId },
     })
 
-    if (!round || !round.isActive) {
-      return NextResponse.json({ error: 'Round not found or inactive' }, { status: 404 })
+    if (!round) {
+      return NextResponse.json({ error: 'Round not found' }, { status: 404 })
     }
 
     // Check if user has enough credits
     const user = await prisma.user.findUnique({
-      where: { id: session.user.id },
+      where: { id: (session.user as any).id },
     })
 
     if (!user || user.credits < amount) {
@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
     const existingBet = await prisma.bet.findUnique({
       where: {
         userId_roundId: {
-          userId: session.user.id,
+          userId: (session.user as any).id,
           roundId: roundId,
         },
       },
@@ -57,14 +57,14 @@ export async function POST(request: NextRequest) {
     const result = await prisma.$transaction([
       prisma.bet.create({
         data: {
-          userId: session.user.id,
+          userId: (session.user as any).id,
           roundId,
           option,
           amount,
         },
       }),
       prisma.user.update({
-        where: { id: session.user.id },
+        where: { id: (session.user as any).id },
         data: { credits: user.credits - amount },
       }),
     ])

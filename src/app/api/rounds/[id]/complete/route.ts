@@ -27,8 +27,8 @@ export async function POST(
       include: { bets: true },
     })
 
-    if (!round || !round.isActive) {
-      return NextResponse.json({ error: 'Round not found or already completed' }, { status: 404 })
+    if (!round) {
+      return NextResponse.json({ error: 'Round not found' }, { status: 404 })
     }
 
     // Calculate pools
@@ -87,7 +87,6 @@ export async function POST(
         where: { id: roundId },
         data: {
           winner,
-          isActive: false,
         },
       }),
       ...payoutUpdates,
