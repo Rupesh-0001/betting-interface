@@ -537,7 +537,7 @@ export default function Home() {
                       placeholder="e.g., Team Beta"
                       value={newRound.optionB}
                       onChange={(e) => setNewRound(prev => ({ ...prev, optionB: e.target.value }))}
-                    />
+          />
                   </div>
                 </div>
 
