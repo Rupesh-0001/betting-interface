@@ -26,4 +26,4 @@ async function main() {
   console.log('Seed data created', round1.id, round2.id)
 }
 
-main().catch(console.error).finally(() => prisma.())
+main().catch(console.error).finally(() => prisma.$disconnect())
