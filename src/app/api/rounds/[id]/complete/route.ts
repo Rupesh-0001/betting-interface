@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma"
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: { id: string } }
 ) {
   try {
     const session = await getServerSession(authOptions)
@@ -18,7 +18,7 @@ export async function POST(
     }
 
     const { winningOption } = await request.json()
-    const roundId = params.id
+    const roundId = context.params.id
 
     if (!winningOption || !['A', 'B'].includes(winningOption)) {
       return NextResponse.json(
