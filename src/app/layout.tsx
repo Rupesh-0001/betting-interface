@@ -1,25 +1,30 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
-import { SessionProvider } from "@/components/SessionProvider";
+import SessionProvider from '@/components/SessionProvider'
 
-const inter = Inter({ subsets: ["latin"] });
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-inter",
+});
 
 export const metadata: Metadata = {
   title: "Betting Interface",
-  description: "A local betting interface for binary outcomes",
+  description: "Local betting interface with Google authentication",
 };
 
 export default function RootLayout({
   children,
-}: {
-  children: React.ReactNode
-}) {
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
   return (
     <html lang="en">
-      <body className={inter.className}>
+      <body
+        className={`${inter.variable} font-sans antialiased bg-gray-50 min-h-screen`}
+      >
         <SessionProvider>
-          {children}
+        {children}
         </SessionProvider>
       </body>
     </html>

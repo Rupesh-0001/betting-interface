@@ -1,7 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
-import { prisma } from '@/lib/prisma'
+import { NextRequest, NextResponse } from "next/server"
+import { getServerSession } from "next-auth/next"
+import { authOptions } from "@/lib/auth"
+import { prisma } from "@/lib/prisma"
 
 export async function POST(
   request: NextRequest,
@@ -10,97 +10,109 @@ export async function POST(
   try {
     const session = await getServerSession(authOptions)
     
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    if (!session?.user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      )
     }
 
-    const { winner } = await request.json()
+    const { winningOption } = await request.json()
     const roundId = params.id
 
-    if (winner !== 'A' && winner !== 'B') {
-      return NextResponse.json({ error: 'Invalid winner' }, { status: 400 })
+    if (!winningOption || !['A', 'B'].includes(winningOption)) {
+      return NextResponse.json(
+        { error: 'Invalid winning option' },
+        { status: 400 }
+      )
     }
 
-    // Get round with all bets
+    // Check if round exists and is active
     const round = await prisma.round.findUnique({
       where: { id: roundId },
-      include: { bets: true },
+      include: {
+        bets: true,
+      },
     })
 
-    if (!round) {
-      return NextResponse.json({ error: 'Round not found' }, { status: 404 })
+    if (!round || round.status !== 'ACTIVE') {
+      return NextResponse.json(
+        { error: 'Round not found or not active' },
+        { status: 400 }
+      )
     }
 
-    // Calculate pools
-    const winningBets = round.bets.filter(bet => bet.option === winner)
-    const losingBets = round.bets.filter(bet => bet.option !== winner)
+    // Calculate pools and distribute winnings
+    const totalPoolA = round.bets
+      .filter(bet => bet.option === 'A')
+      .reduce((sum, bet) => sum + bet.amount, 0)
     
-    const winningPool = winningBets.reduce((sum, bet) => sum + bet.amount, 0)
-    const losingPool = losingBets.reduce((sum, bet) => sum + bet.amount, 0)
-    const totalPool = winningPool + losingPool
+    const totalPoolB = round.bets
+      .filter(bet => bet.option === 'B')
+      .reduce((sum, bet) => sum + bet.amount, 0)
+    
+    const totalPool = totalPoolA + totalPoolB
+    const winningPool = winningOption === 'A' ? totalPoolA : totalPoolB
+    const winningBets = round.bets.filter(bet => bet.option === winningOption)
 
-    if (winningBets.length === 0) {
-      // No winners, return all money
-      return NextResponse.json({ error: 'No winning bets found' }, { status: 400 })
-    }
-
-    // Calculate payouts for winners
-    const payoutUpdates = []
-    const userUpdates = []
-
-    for (const bet of winningBets) {
-      const payout = Math.floor((bet.amount / winningPool) * totalPool)
-      payoutUpdates.push(
-        prisma.bet.update({
-          where: { id: bet.id },
-          data: { payout },
-        })
-      )
-      
-      // Update user credits
-      const user = await prisma.user.findUnique({
-        where: { id: bet.userId },
-      })
-      if (user) {
-        userUpdates.push(
-          prisma.user.update({
-            where: { id: bet.userId },
-            data: { credits: user.credits + payout },
-          })
-        )
-      }
-    }
-
-    // Update losing bets with 0 payout
-    for (const bet of losingBets) {
-      payoutUpdates.push(
-        prisma.bet.update({
-          where: { id: bet.id },
-          data: { payout: 0 },
-        })
-      )
-    }
-
-    // Execute all updates in a transaction
-    await prisma.$transaction([
-      prisma.round.update({
+    if (winningPool === 0) {
+      // No winning bets, just mark round as completed
+      await prisma.round.update({
         where: { id: roundId },
         data: {
-          winner,
+          status: 'COMPLETED',
+          winner: winningOption,
         },
-      }),
-      ...payoutUpdates,
-      ...userUpdates,
-    ])
+      })
 
-    return NextResponse.json({ 
-      success: true, 
-      winner,
-      winningBets: winningBets.length,
-      totalPayout: totalPool,
+      return NextResponse.json({ message: 'Round completed, no winners' })
+    }
+
+    // Calculate and distribute winnings
+    const result = await prisma.$transaction(async (tx) => {
+      // Update round status
+      await tx.round.update({
+        where: { id: roundId },
+        data: {
+          status: 'COMPLETED',
+          winner: winningOption,
+        },
+      })
+
+      // Distribute winnings to each winner
+      for (const bet of winningBets) {
+        const payout = Math.floor((bet.amount / winningPool) * totalPool)
+        
+        await tx.user.update({
+          where: { id: bet.userId },
+          data: {
+            credits: {
+              increment: payout,
+            },
+          },
+        })
+
+        await tx.bet.update({
+          where: { id: bet.id },
+          data: {
+            payout,
+          },
+        })
+      }
+
+      return {
+        totalPool,
+        winningPool,
+        winnersCount: winningBets.length,
+      }
     })
+
+    return NextResponse.json(result)
   } catch (error) {
     console.error('Error completing round:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return NextResponse.json(
+      { error: 'Failed to complete round' },
+      { status: 500 }
+    )
   }
 } 

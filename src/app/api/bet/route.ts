@@ -1,24 +1,35 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
-import { prisma } from '@/lib/prisma'
+import { NextRequest, NextResponse } from "next/server"
+import { getServerSession } from "next-auth/next"
+import { authOptions } from "@/lib/auth"
+import { prisma } from "@/lib/prisma"
 
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions)
     
-    if (!session?.user || !(session.user as any).id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    if (!session?.user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      )
     }
+
+    const userId = (session.user as any).id as string
 
     const { roundId, option, amount } = await request.json()
 
-    if (!roundId || !option || !amount || amount <= 0) {
-      return NextResponse.json({ error: 'Invalid bet data' }, { status: 400 })
+    if (!roundId || !option || !amount) {
+      return NextResponse.json(
+        { error: 'Missing required fields' },
+        { status: 400 }
+      )
     }
 
-    if (option !== 'A' && option !== 'B') {
-      return NextResponse.json({ error: 'Invalid option' }, { status: 400 })
+    if (amount <= 0) {
+      return NextResponse.json(
+        { error: 'Amount must be positive' },
+        { status: 400 }
+      )
     }
 
     // Check if round exists and is active
@@ -26,52 +37,54 @@ export async function POST(request: NextRequest) {
       where: { id: roundId },
     })
 
-    if (!round) {
-      return NextResponse.json({ error: 'Round not found' }, { status: 404 })
+    if (!round || round.status !== 'ACTIVE') {
+      return NextResponse.json(
+        { error: 'Round not found or not active' },
+        { status: 400 }
+      )
     }
 
-    // Check if user has enough credits
+    // Check user's balance
     const user = await prisma.user.findUnique({
-      where: { id: (session.user as any).id },
+      where: { id: userId },
     })
 
     if (!user || user.credits < amount) {
-      return NextResponse.json({ error: 'Insufficient credits' }, { status: 400 })
-    }
-
-    // Check if user already bet on this round
-    const existingBet = await prisma.bet.findUnique({
-      where: {
-        userId_roundId: {
-          userId: (session.user as any).id,
-          roundId: roundId,
-        },
-      },
-    })
-
-    if (existingBet) {
-      return NextResponse.json({ error: 'You have already bet on this round' }, { status: 400 })
+      return NextResponse.json(
+        { error: 'Insufficient credits' },
+        { status: 400 }
+      )
     }
 
     // Create bet and update user credits in a transaction
-    const result = await prisma.$transaction([
-      prisma.bet.create({
+    const result = await prisma.$transaction(async (tx) => {
+      // Create the bet
+      const bet = await tx.bet.create({
         data: {
-          userId: (session.user as any).id,
+          userId,
           roundId,
           option,
           amount,
         },
-      }),
-      prisma.user.update({
-        where: { id: (session.user as any).id },
-        data: { credits: user.credits - amount },
-      }),
-    ])
+      })
 
-    return NextResponse.json({ bet: result[0], user: result[1] })
+      // Update user credits
+      await tx.user.update({
+        where: { id: userId },
+        data: {
+          credits: user.credits - amount,
+        },
+      })
+
+      return bet
+    })
+
+    return NextResponse.json(result)
   } catch (error) {
     console.error('Error placing bet:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return NextResponse.json(
+      { error: 'Failed to place bet' },
+      { status: 500 }
+    )
   }
 } 

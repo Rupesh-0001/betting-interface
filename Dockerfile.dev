@@ -1,0 +1,29 @@
+FROM node:20-slim
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update -y && apt-get install -y openssl ca-certificates && rm -rf /var/lib/apt/lists/*
+
+# Copy package files
+COPY package.json package-lock.json* ./
+
+# Install dependencies
+RUN npm install
+
+# Copy source code
+COPY . .
+
+# Generate Prisma client
+RUN npx prisma generate
+
+# Initialize database and seed data (run in CMD instead to handle errors better)
+# RUN npx prisma migrate dev --name init || true
+# RUN npm run db:seed || true
+
+# Expose port
+EXPOSE 3000
+
+# Initialize database and start development server
+CMD ["sh", "-c", "npx prisma db push --accept-data-loss && npm run db:seed && npm run dev"] 
