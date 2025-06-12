@@ -3,6 +3,13 @@ import { getServerSession } from "next-auth/next"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 
+interface SessionUser {
+  id: string
+  name?: string | null
+  email?: string | null
+  image?: string | null
+}
+
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions)
@@ -14,7 +21,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const userId = (session.user as any).id as string
+    const userId = (session.user as SessionUser).id
 
     const { roundId, option, amount } = await request.json()
 

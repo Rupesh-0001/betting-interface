@@ -295,7 +295,17 @@ function RoundCard({
   onBet: (roundId: string, option: string, amount: number) => void
   onComplete: (roundId: string, winner: string) => void
   loading: boolean
-  userBet?: any
+  userBet?: {
+    id: string
+    option: string
+    amount: number
+    payout?: number
+    round: {
+      title: string
+      status: string
+      winner?: string
+    }
+  }
 }) {
   const [betAmounts, setBetAmounts] = useState({ A: 10, B: 10 })
   
