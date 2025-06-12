@@ -2,6 +2,14 @@ import { NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth/next"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
+import { isAdmin } from "@/lib/utils"
+
+interface SessionUser {
+  id: string
+  name?: string | null
+  email?: string | null
+  image?: string | null
+}
 
 export async function POST(
   request: NextRequest,
@@ -17,11 +25,21 @@ export async function POST(
       )
     }
 
-    const { winningOption } = await request.json()
+    const user = session.user as SessionUser
+
+    // Check if user is admin
+    if (!isAdmin(user.email)) {
+      return NextResponse.json(
+        { error: 'Admin access required to complete rounds' },
+        { status: 403 }
+      )
+    }
+
+    const { winner } = await request.json()
     const params = await context.params
     const roundId = params.id
 
-    if (!winningOption || !['A', 'B'].includes(winningOption)) {
+    if (!winner || !['A', 'B'].includes(winner)) {
       return NextResponse.json(
         { error: 'Invalid winning option' },
         { status: 400 }
@@ -53,8 +71,8 @@ export async function POST(
       .reduce((sum, bet) => sum + bet.amount, 0)
     
     const totalPool = totalPoolA + totalPoolB
-    const winningPool = winningOption === 'A' ? totalPoolA : totalPoolB
-    const winningBets = round.bets.filter(bet => bet.option === winningOption)
+    const winningPool = winner === 'A' ? totalPoolA : totalPoolB
+    const winningBets = round.bets.filter(bet => bet.option === winner)
 
     if (winningPool === 0) {
       // No winning bets, just mark round as completed
@@ -62,7 +80,7 @@ export async function POST(
         where: { id: roundId },
         data: {
           status: 'COMPLETED',
-          winner: winningOption,
+          winner: winner,
         },
       })
 
@@ -76,7 +94,7 @@ export async function POST(
         where: { id: roundId },
         data: {
           status: 'COMPLETED',
-          winner: winningOption,
+          winner: winner,
         },
       })
 

@@ -51,14 +51,30 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Check if round is locked
+    if (round.locked) {
+      return NextResponse.json(
+        { error: 'Betting is locked for this round' },
+        { status: 400 }
+      )
+    }
+
     // Check user's balance
     const user = await prisma.user.findUnique({
       where: { id: userId },
     })
 
-    if (!user || user.credits < amount) {
+    if (!user) {
       return NextResponse.json(
-        { error: 'Insufficient credits' },
+        { error: 'User not found' },
+        { status: 400 }
+      )
+    }
+
+    // Ensure credits never go below 100
+    if (user.credits - amount < 100) {
+      return NextResponse.json(
+        { error: 'Insufficient credits. You must maintain at least 100 credits.' },
         { status: 400 }
       )
     }

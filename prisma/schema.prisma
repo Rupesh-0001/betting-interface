@@ -61,6 +61,7 @@ model Round {
   optionA String @default("Option A")
   optionB String @default("Option B")
   status String @default("ACTIVE")
+  locked Boolean @default(false)
   winner String?
   totalPoolA Int @default(0)
   totalPoolB Int @default(0)

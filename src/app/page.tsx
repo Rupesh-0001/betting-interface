@@ -5,7 +5,8 @@ import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
-import { LogIn, LogOut, TrendingUp, User, Coins } from 'lucide-react'
+import { LogIn, LogOut, TrendingUp, User, Coins, Trophy, Lock, Unlock } from 'lucide-react'
+import { isAdmin } from '@/lib/utils'
 
 interface Round {
   id: string
@@ -14,8 +15,10 @@ interface Round {
   optionA: string
   optionB: string
   status: string
+  locked: boolean
   totalPoolA: number
   totalPoolB: number
+  winner?: string
   _count: { bets: number }
 }
 
@@ -34,12 +37,26 @@ interface UserProfile {
   }>
 }
 
+interface LeaderboardEntry {
+  rank: number
+  id: string
+  name: string
+  email: string
+  credits: number
+  totalBets: number
+  totalBetAmount: number
+  totalPayout: number
+  netProfit: number
+}
+
 export default function Home() {
   const { data: session, status } = useSession()
   const [rounds, setRounds] = useState<Round[]>([])
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
   const [loading, setLoading] = useState(false)
   const [showCreateRound, setShowCreateRound] = useState(false)
+  const [showLeaderboard, setShowLeaderboard] = useState(false)
   const [newRound, setNewRound] = useState({
     title: '',
     description: '',
@@ -47,12 +64,17 @@ export default function Home() {
     optionB: ''
   })
 
+  const userIsAdmin = isAdmin(session?.user?.email)
+
   useEffect(() => {
     if (session) {
       fetchRounds()
       fetchUserProfile()
+      if (userIsAdmin) {
+        fetchLeaderboard()
+      }
     }
-  }, [session])
+  }, [session, userIsAdmin])
 
   const fetchRounds = async () => {
     try {
@@ -74,6 +96,18 @@ export default function Home() {
     }
   }
 
+  const fetchLeaderboard = async () => {
+    try {
+      const res = await fetch('/api/leaderboard')
+      if (res.ok) {
+        const data = await res.json()
+        setLeaderboard(data)
+      }
+    } catch (error) {
+      console.error('Error fetching leaderboard:', error)
+    }
+  }
+
   const createRound = async () => {
     if (!newRound.title || !newRound.optionA || !newRound.optionB) return
 
@@ -89,9 +123,13 @@ export default function Home() {
         setNewRound({ title: '', description: '', optionA: '', optionB: '' })
         setShowCreateRound(false)
         fetchRounds()
+      } else {
+        const error = await res.json()
+        alert(error.error || 'Failed to create round')
       }
     } catch (error) {
       console.error('Error creating round:', error)
+      alert('Failed to create round')
     }
     setLoading(false)
   }
@@ -133,10 +171,40 @@ export default function Home() {
       if (res.ok) {
         fetchRounds()
         fetchUserProfile()
+        if (userIsAdmin) {
+          fetchLeaderboard()
+        }
         alert('Round completed successfully!')
+      } else {
+        const error = await res.json()
+        alert(error.error || 'Failed to complete round')
       }
     } catch (error) {
       console.error('Error completing round:', error)
+      alert('Failed to complete round')
+    }
+    setLoading(false)
+  }
+
+  const toggleRoundLock = async (roundId: string, locked: boolean) => {
+    setLoading(true)
+    try {
+      const res = await fetch(`/api/rounds/${roundId}/lock`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ locked })
+      })
+
+      if (res.ok) {
+        fetchRounds()
+        alert(`Round ${locked ? 'locked' : 'unlocked'} successfully!`)
+      } else {
+        const error = await res.json()
+        alert(error.error || 'Failed to update round lock status')
+      }
+    } catch (error) {
+      console.error('Error updating round lock status:', error)
+      alert('Failed to update round lock status')
     }
     setLoading(false)
   }
@@ -185,6 +253,11 @@ export default function Home() {
               <h1 className="text-xl font-semibold text-gray-900">
                 Betting Interface
               </h1>
+              {userIsAdmin && (
+                <span className="ml-3 px-2 py-1 bg-yellow-100 text-yellow-800 text-xs font-medium rounded">
+                  Admin
+                </span>
+              )}
             </div>
             
             <div className="flex items-center space-x-4">
@@ -194,6 +267,17 @@ export default function Home() {
                   <span className="font-medium">{userProfile.credits}</span>
                   <span className="ml-1">credits</span>
                 </div>
+              )}
+              
+              {userIsAdmin && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowLeaderboard(!showLeaderboard)}
+                >
+                  <Trophy className="h-4 w-4 mr-1" />
+                  Leaderboard
+                </Button>
               )}
               
               <div className="flex items-center space-x-3">
@@ -214,15 +298,62 @@ export default function Home() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Leaderboard */}
+        {showLeaderboard && userIsAdmin && (
+          <Card className="mb-8 p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold flex items-center">
+                <Trophy className="h-5 w-5 mr-2 text-yellow-500" />
+                Leaderboard
+              </h3>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowLeaderboard(false)}
+              >
+                Close
+              </Button>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-left py-2">Rank</th>
+                    <th className="text-left py-2">Name</th>
+                    <th className="text-left py-2">Credits</th>
+                    <th className="text-left py-2">Total Bets</th>
+                    <th className="text-left py-2">Net Profit</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {leaderboard.map((entry) => (
+                    <tr key={entry.id} className="border-b">
+                      <td className="py-2 font-medium">#{entry.rank}</td>
+                      <td className="py-2">{entry.name}</td>
+                      <td className="py-2 font-medium">{entry.credits}</td>
+                      <td className="py-2">{entry.totalBets}</td>
+                      <td className={`py-2 font-medium ${entry.netProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {entry.netProfit >= 0 ? '+' : ''}{entry.netProfit}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        )}
+
         <div className="flex justify-between items-center mb-8">
           <h2 className="text-2xl font-bold text-gray-900">Active Rounds</h2>
-          <Button onClick={() => setShowCreateRound(true)}>
-            Create New Round
-          </Button>
+          {userIsAdmin && (
+            <Button onClick={() => setShowCreateRound(true)}>
+              Create New Round
+            </Button>
+          )}
         </div>
 
         {/* Create Round Modal */}
-        {showCreateRound && (
+        {showCreateRound && userIsAdmin && (
           <Card className="mb-8 p-6">
             <h3 className="text-lg font-semibold mb-4">Create New Round</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -231,21 +362,21 @@ export default function Home() {
                 value={newRound.title}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewRound({...newRound, title: e.target.value})}
               />
-                             <Input
-                 placeholder="Description (optional)"
-                 value={newRound.description}
-                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewRound({...newRound, description: e.target.value})}
-               />
-               <Input
-                 placeholder="Option A"
-                 value={newRound.optionA}
-                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewRound({...newRound, optionA: e.target.value})}
-               />
-               <Input
-                 placeholder="Option B"
-                 value={newRound.optionB}
-                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewRound({...newRound, optionB: e.target.value})}
-            />
+              <Input
+                placeholder="Description (optional)"
+                value={newRound.description}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewRound({...newRound, description: e.target.value})}
+              />
+              <Input
+                placeholder="Option A"
+                value={newRound.optionA}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewRound({...newRound, optionA: e.target.value})}
+              />
+              <Input
+                placeholder="Option B"
+                value={newRound.optionB}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewRound({...newRound, optionB: e.target.value})}
+              />
             </div>
             <div className="flex justify-end space-x-3 mt-4">
               <Button variant="outline" onClick={() => setShowCreateRound(false)}>
@@ -266,8 +397,10 @@ export default function Home() {
               round={round}
               onBet={placeBet}
               onComplete={completeRound}
+              onToggleLock={toggleRoundLock}
               loading={loading}
               userBet={userProfile?.bets?.find(bet => bet.round.title === round.title)}
+              isAdmin={userIsAdmin}
             />
           ))}
         </div>
@@ -276,7 +409,9 @@ export default function Home() {
           <div className="text-center py-12">
             <TrendingUp className="mx-auto h-12 w-12 text-gray-400 mb-4" />
             <h3 className="text-lg font-medium text-gray-900 mb-2">No active rounds</h3>
-            <p className="text-gray-600">Create a new round to start betting!</p>
+            <p className="text-gray-600">
+              {userIsAdmin ? 'Create a new round to start betting!' : 'No rounds available at the moment.'}
+            </p>
           </div>
         )}
       </main>
@@ -288,13 +423,17 @@ function RoundCard({
   round, 
   onBet, 
   onComplete, 
+  onToggleLock,
   loading, 
-  userBet 
+  userBet,
+  isAdmin
 }: { 
   round: Round
   onBet: (roundId: string, option: string, amount: number) => void
   onComplete: (roundId: string, winner: string) => void
+  onToggleLock: (roundId: string, locked: boolean) => void
   loading: boolean
+  isAdmin: boolean
   userBet?: {
     id: string
     option: string
@@ -316,7 +455,15 @@ function RoundCard({
   return (
     <Card className="p-6">
       <div className="mb-4">
-        <h3 className="text-lg font-semibold mb-2">{round.title}</h3>
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-lg font-semibold">{round.title}</h3>
+          {round.locked && (
+            <span className="flex items-center text-xs text-red-600 bg-red-50 px-2 py-1 rounded">
+              <Lock className="h-3 w-3 mr-1" />
+              Locked
+            </span>
+          )}
+        </div>
         {round.description && (
           <p className="text-sm text-gray-600 mb-3">{round.description}</p>
         )}
@@ -335,13 +482,13 @@ function RoundCard({
                 {round.totalPoolA} credits ({poolAPercentage.toFixed(1)}%)
               </span>
             </div>
-            {!userBet && (
+            {!userBet && !round.locked && (
               <div className="flex space-x-2">
                 <Input
                   type="number"
                   min="1"
                   value={betAmounts.A}
-                                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBetAmounts({...betAmounts, A: parseInt(e.target.value) || 1})}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBetAmounts({...betAmounts, A: parseInt(e.target.value) || 1})}
                   className="flex-1"
                 />
                 <Button 
@@ -363,13 +510,13 @@ function RoundCard({
                 {round.totalPoolB} credits ({poolBPercentage.toFixed(1)}%)
               </span>
             </div>
-            {!userBet && (
+            {!userBet && !round.locked && (
               <div className="flex space-x-2">
                 <Input
                   type="number"
                   min="1"
                   value={betAmounts.B}
-                                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBetAmounts({...betAmounts, B: parseInt(e.target.value) || 1})}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBetAmounts({...betAmounts, B: parseInt(e.target.value) || 1})}
                   className="flex-1"
                 />
                 <Button 
@@ -391,41 +538,69 @@ function RoundCard({
             </div>
           )}
 
-          {/* Complete Round Buttons */}
-          <div className="flex space-x-2">
-            <Button 
-              variant="outline" 
-              size="sm" 
-              onClick={() => onComplete(round.id, 'A')}
-              disabled={loading}
-              className="flex-1"
-        >
-              {round.optionA} Wins
-            </Button>
-            <Button 
-              variant="outline" 
-              size="sm" 
-              onClick={() => onComplete(round.id, 'B')}
-              disabled={loading}
-              className="flex-1"
-            >
-              {round.optionB} Wins
-            </Button>
-          </div>
+          {round.locked && !userBet && (
+            <div className="mb-4 p-3 bg-red-50 rounded-lg">
+              <p className="text-sm text-red-800">
+                Betting is locked for this round
+              </p>
+            </div>
+          )}
+
+          {/* Admin Controls */}
+          {isAdmin && (
+            <div className="border-t pt-4 mt-4">
+              <div className="flex flex-wrap gap-2">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => onToggleLock(round.id, !round.locked)}
+                  disabled={loading}
+                >
+                  {round.locked ? (
+                    <>
+                      <Unlock className="h-3 w-3 mr-1" />
+                      Unlock
+                    </>
+                  ) : (
+                    <>
+                      <Lock className="h-3 w-3 mr-1" />
+                      Lock
+                    </>
+                  )}
+                </Button>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => onComplete(round.id, 'A')}
+                  disabled={loading}
+                >
+                  {round.optionA} Wins
+                </Button>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => onComplete(round.id, 'B')}
+                  disabled={loading}
+                >
+                  {round.optionB} Wins
+                </Button>
+              </div>
+            </div>
+          )}
         </>
       )}
 
       {round.status === 'COMPLETED' && (
         <div className="text-center p-4 bg-green-50 rounded-lg">
           <p className="text-green-800 font-medium">
-            Round Completed
+            Round Completed - {round.winner === 'A' ? round.optionA : round.optionB} Won!
           </p>
           {userBet?.payout && (
-            <p className="text-sm text-green-700">
+            <p className="text-sm text-green-700 mt-1">
               You won {userBet.payout} credits!
             </p>
           )}
-    </div>
+        </div>
       )}
     </Card>
   )
