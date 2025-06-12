@@ -72,9 +72,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Ensure credits never go below 100
-    if (user.credits - amount < 100) {
+    if (user.credits - amount < 0) {
       return NextResponse.json(
-        { error: 'Insufficient credits. You must maintain at least 100 credits.' },
+        { error: "Insufficient credits. You can't bet more than you have." },
         { status: 400 }
       )
     }
