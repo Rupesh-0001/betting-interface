@@ -401,6 +401,7 @@ export default function Home() {
               loading={loading}
               userBet={userProfile?.bets?.find(bet => bet.round.title === round.title)}
               isAdmin={userIsAdmin}
+              userProfile={userProfile}
             />
           ))}
         </div>
@@ -426,7 +427,8 @@ function RoundCard({
   onToggleLock,
   loading, 
   userBet,
-  isAdmin
+  isAdmin,
+  userProfile
 }: { 
   round: Round
   onBet: (roundId: string, option: string, amount: number) => void
@@ -444,13 +446,33 @@ function RoundCard({
       status: string
       winner?: string
     }
-  }
+  },
+  userProfile: UserProfile | null
 }) {
-  const [betAmounts, setBetAmounts] = useState({ A: 10, B: 10 })
+  const [betAmounts, setBetAmounts] = useState<{ A: string; B: string }>({ A: "10", B: "10" });
   
   const totalPool = round.totalPoolA + round.totalPoolB
   const poolAPercentage = totalPool > 0 ? (round.totalPoolA / totalPool) * 100 : 0
   const poolBPercentage = totalPool > 0 ? (round.totalPoolB / totalPool) * 100 : 0
+
+  // Helper to validate and place bet
+  const handleBet = (option: 'A' | 'B') => {
+    const value = betAmounts[option];
+    const amount = parseInt(value, 10);
+    if (!value || isNaN(amount)) {
+      alert('Please enter a valid bet amount.');
+      return;
+    }
+    if (amount < 1) {
+      alert('Bet amount must be at least 1.');
+      return;
+    }
+    if (amount > (userProfile?.credits ?? Infinity)) {
+      alert('You cannot bet more than your available credits.');
+      return;
+    }
+    onBet(round.id, option, amount);
+  };
 
   return (
     <Card className="p-6">
@@ -488,12 +510,12 @@ function RoundCard({
                   type="number"
                   min="1"
                   value={betAmounts.A}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBetAmounts({...betAmounts, A: parseInt(e.target.value) || 1})}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBetAmounts({ ...betAmounts, A: e.target.value })}
                   className="flex-1"
                 />
                 <Button 
                   size="sm"
-                  onClick={() => onBet(round.id, 'A', betAmounts.A)}
+                  onClick={() => handleBet('A')}
                   disabled={loading}
                 >
                   Bet A
@@ -516,12 +538,12 @@ function RoundCard({
                   type="number"
                   min="1"
                   value={betAmounts.B}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBetAmounts({...betAmounts, B: parseInt(e.target.value) || 1})}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBetAmounts({ ...betAmounts, B: e.target.value })}
                   className="flex-1"
                 />
                 <Button 
                   size="sm"
-                  onClick={() => onBet(round.id, 'B', betAmounts.B)}
+                  onClick={() => handleBet('B')}
                   disabled={loading}
                 >
                   Bet B
